@@ -463,15 +463,6 @@ class PluginRuntimeConnector:
 
             yield cmd_ret
 
-    # KnowledgeRetriever methods
-    async def list_knowledge_retrievers(self, bound_plugins: list[str] | None = None) -> list[dict[str, Any]]:
-        """List all available KnowledgeRetriever components."""
-        if not self.is_enable_plugin:
-            return []
-
-        retrievers_data = await self.handler.list_knowledge_retrievers(include_plugins=bound_plugins)
-        return retrievers_data
-
     async def retrieve_knowledge(
         self,
         plugin_author: str,
@@ -479,8 +470,8 @@ class PluginRuntimeConnector:
         retriever_name: str,
         instance_id: str,
         retrieval_context: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        """Retrieve knowledge using a KnowledgeRetriever instance."""
+    ) -> dict[str, Any]:
+        """Retrieve knowledge using a RAGEngine instance."""
         if not self.is_enable_plugin:
             return []
 
@@ -503,38 +494,74 @@ class PluginRuntimeConnector:
     async def sync_polymorphic_component_instances(self) -> dict[str, Any]:
         """Sync polymorphic component instances with runtime.
 
-        This collects all external knowledge bases from database and sends to runtime
-        to ensure instance integrity across restarts.
+        Currently no polymorphic components need syncing.
+        This method is kept for future extensibility.
         """
         if not self.is_enable_plugin:
             return {}
 
-        # ===== external knowledge bases =====
+        return await self.handler.sync_polymorphic_component_instances([])
 
-        external_kbs = await self.ap.external_kb_service.get_external_knowledge_bases()
+    # ================= RAG Capability Callers =================
 
-        # Build required_instances list
-        required_instances = []
-        for kb in external_kbs:
-            required_instances.append(
-                {
-                    'instance_id': kb['uuid'],
-                    'plugin_author': kb['plugin_author'],
-                    'plugin_name': kb['plugin_name'],
-                    'component_kind': 'KnowledgeRetriever',
-                    'component_name': kb['retriever_name'],
-                    'config': kb['retriever_config'],
-                }
+    @staticmethod
+    def _parse_plugin_id(plugin_id: str) -> tuple[str, str]:
+        """Parse a plugin ID string into (author, name).
+
+        Args:
+            plugin_id: Plugin ID in 'author/name' format.
+
+        Returns:
+            Tuple of (plugin_author, plugin_name).
+
+        Raises:
+            ValueError: If plugin_id is not in the expected 'author/name' format.
+        """
+        if '/' not in plugin_id:
+            raise ValueError(
+                f"Invalid plugin_id format: '{plugin_id}'. "
+                "Expected 'author/name' format (e.g. 'langbot/rag-engine')."
             )
+        return plugin_id.split('/', 1)
 
-        self.ap.logger.info(f'Syncing {len(required_instances)} polymorphic component instances to runtime')
+    async def call_rag_ingest(self, plugin_id: str, context_data: dict[str, Any]) -> dict[str, Any]:
+        """Call plugin to ingest document.
 
-        # Send to runtime
-        sync_result = await self.handler.sync_polymorphic_component_instances(required_instances)
+        Args:
+            plugin_id: Target plugin ID (author/name).
+            context_data: IngestionContext data.
+        """
+        plugin_author, plugin_name = self._parse_plugin_id(plugin_id)
+        return await self.handler.rag_ingest_document(plugin_author, plugin_name, context_data)
 
-        self.ap.logger.info(
-            f'Sync complete: {len(sync_result.get("success_instances", []))} succeeded, '
-            f'{len(sync_result.get("failed_instances", []))} failed'
-        )
+    async def call_rag_delete_document(self, plugin_id: str, document_id: str, kb_id: str) -> bool:
+        plugin_author, plugin_name = self._parse_plugin_id(plugin_id)
+        return await self.handler.rag_delete_document(plugin_author, plugin_name, document_id, kb_id)
 
-        return sync_result
+    async def get_rag_creation_schema(self, plugin_id: str) -> dict[str, Any]:
+        plugin_author, plugin_name = self._parse_plugin_id(plugin_id)
+        return await self.handler.get_rag_creation_schema(plugin_author, plugin_name)
+
+    async def get_rag_retrieval_schema(self, plugin_id: str) -> dict[str, Any]:
+        plugin_author, plugin_name = self._parse_plugin_id(plugin_id)
+        return await self.handler.get_rag_retrieval_schema(plugin_author, plugin_name)
+
+    async def rag_on_kb_create(self, plugin_id: str, kb_id: str, config: dict[str, Any]) -> dict[str, Any]:
+        """Notify plugin about KB creation."""
+        plugin_author, plugin_name = self._parse_plugin_id(plugin_id)
+        return await self.handler.rag_on_kb_create(plugin_author, plugin_name, kb_id, config)
+
+    async def rag_on_kb_delete(self, plugin_id: str, kb_id: str) -> dict[str, Any]:
+        """Notify plugin about KB deletion."""
+        plugin_author, plugin_name = self._parse_plugin_id(plugin_id)
+        return await self.handler.rag_on_kb_delete(plugin_author, plugin_name, kb_id)
+
+    async def list_rag_engines(self) -> list[dict[str, Any]]:
+        """List all available RAG engines from plugins.
+
+        Returns a list of RAG engines with their capabilities and configuration schemas.
+        """
+        if not self.is_enable_plugin:
+            return []
+
+        return await self.handler.list_rag_engines()
