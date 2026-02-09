@@ -234,9 +234,19 @@ export default function KBForm({
   if (ragEngines.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 space-y-4">
-        <p className="text-muted-foreground">{t('knowledge.noEnginesAvailable')}</p>
+        <p className="text-muted-foreground">
+          {t('knowledge.noEnginesAvailable')}
+        </p>
         <p className="text-sm text-muted-foreground">
-          {t('knowledge.installEngineHint')}
+          {t('knowledge.retrieverInstallInfo')}{' '}
+          <a
+            href="https://space.langbot.app/market?category=KnowledgeRetriever"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline hover:no-underline"
+          >
+            {t('knowledge.retrieverMarketLink')}
+          </a>
         </p>
       </div>
     );
